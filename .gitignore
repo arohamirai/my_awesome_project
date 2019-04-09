@@ -36,3 +36,4 @@ catkin_ws/devel
 catkin_ws/install
 catkin_ws/.catkin_workspace
 catkin_ws/src/CMakeLists.txt
+build
