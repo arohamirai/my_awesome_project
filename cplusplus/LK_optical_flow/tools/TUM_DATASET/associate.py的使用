@@ -1,0 +1,1 @@
+python associate.py  rgb.txt depth.txt >associate.txt
