@@ -40,7 +40,7 @@ main (int argc, char** argv)
   // Neighbors within voxel search
 
   std::vector<int> pointIdxVec;
-  std::cout << "a: " << octree.getLeafCount() << std::endl;
+  std::cout << "a: " << octree.breadth_begin() << std::endl;
 
 
 
