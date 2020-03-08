@@ -8,6 +8,7 @@
 #include <visp3/visual_features/vpFeatureThetaU.h>
 #include <visp3/visual_features/vpFeatureTranslation.h>
 #include <visp3/vs/vpServo.h>
+#include <memory>
 int main(int argc, char** argv)
 {
   vpPlot graph(3, 800, 800, 400, 10, "Curves...");
@@ -26,72 +27,77 @@ int main(int argc, char** argv)
   graph.setLegend(1, 1, "ey");
   graph.setLegend(2, 0, "Trajectory");
 
-  vpHomogeneousMatrix wMc, wMo, cMo, oMc;
+  std::shared_ptr<vpServo> p_task_x_y_;
   vpSimulatorCamera robot;
-  robot.setSamplingTime(0.02);           // Modify the default sampling time to 0.1 second
+  robot.setSamplingTime(
+    0.02);  // Modify the default sampling time to 0.1 second
   robot.setMaxTranslationVelocity(0.2);  // vx, vy and vz max set to 1 m/s
   robot.setMaxRotationVelocity(0.5);     // wx, wy and wz max set to 90 deg/s
 
+  vpVelocityTwistMatrix cVe_eye_;
+  vpMatrix eJe_wz_, eJe_vx_wz_;
+
+  vpFeaturePoint3D feature_x_y_;
+  vpFeaturePoint3D feature_x_y_d_;
+
+  cVe_eye_.eye();
+  eJe_vx_wz_.resize(6, 2);
+  eJe_vx_wz_ = 0;
+  eJe_vx_wz_[0][0] = 1;  // vx
+  eJe_vx_wz_[5][1] = 1;  // wz
+
+  p_task_x_y_ = std::make_shared<vpServo>();
+  p_task_x_y_->setServo(vpServo::EYEINHAND_L_cVe_eJe);
+  p_task_x_y_->setInteractionMatrixType(vpServo::MEAN, vpServo::PSEUDO_INVERSE);
+  p_task_x_y_->setLambda(1.0);
+  p_task_x_y_->set_cVe(cVe_eye_);
+  p_task_x_y_->set_eJe(eJe_vx_wz_);
+
   vpTranslationVector t;
-  vpQuaternionVector q(0,0,0,1), q2(0,0, 0.026,1);
+  vpRzyxVector r;
+  vpHomogeneousMatrix wMc, wMcd;
 
-  double oMc_x = 0.5;
-  double oMc_y = atof(argv[1]);
-  std::cout << oMc_y << std::endl;
-  double adjust_angle =
-    vpMath::rad(50. * boost::math::sign(oMc_x) * oMc_y);
-  std::cout << "adjust_angle: " << adjust_angle * 180/ M_PI <<"degree."  << std::endl;
-  //getchar();
+  t.buildFrom(-0.1, -0.1, 1);
+  r.buildFrom(M_PI / 6, 0, 0);
+  wMc.buildFrom(t, vpRotationMatrix(r));
+  wMcd.eye();
 
-
-  t.buildFrom(0, oMc_y, 0);
-  wMc.buildFrom(t, q2);
-
-  t.buildFrom(-oMc_x, 0, 0);
-  wMo.buildFrom(t, q);
+  feature_x_y_.buildFrom(wMc[0][3], wMc[1][3], 1);
+  feature_x_y_d_.buildFrom(wMcd[0][3], wMcd[1][3], 1);
+  p_task_x_y_->addFeature(feature_x_y_, feature_x_y_d_,
+                          vpFeaturePoint3D::selectX()
+                            | vpFeaturePoint3D::selectY());
 
   robot.setPosition(wMc);
 
-  double last_vx = 0;
-  double vx, wz;
-  double theta;
-
-  for (int i = 0; i < 5000; i++)
+  for (int i = 0; i < 500; i++)
   {
     robot.getPosition(wMc);
     // std::cout << "wMc:\n" << wMc << std::endl;
-    cMo = wMc.inverse() * wMo;
-    oMc = cMo.inverse();
-    theta = std::atan2(oMc[1][0], oMc[0][0]);
+    vpHomogeneousMatrix cMcd = wMc.inverse() * wMcd;
+    feature_x_y_.buildFrom(cMcd[0][3], cMcd[1][3], 1);
 
-    vx = 1 * cMo[0][3];
-    if(theta == 0)
-        wz = 0;
-    else
-    wz = -8 * fabs(last_vx) * theta - 20 * (last_vx * sin(theta) / theta * oMc[1][3]);
+    vpColVector v = p_task_x_y_->computeControlLaw();
+    vpColVector error = p_task_x_y_->getError();
 
-    vpColVector v(6), vv(2), error(2);
-    v[0] = vx;
-    v[5] = wz;
-    last_vx = vx;
-    robot.setVelocity(vpRobot::CAMERA_FRAME, v);
+    vpColVector vv(6);
+    vv[0] = v[0];
+    vv[5] = v[1];
+    robot.setVelocity(vpRobot::ARTICULAR_FRAME, vv);
 
-    vv[0] = vx;
-    vv[1] = wz;
-    error[0] = oMc[0][3];
-    error[1] = oMc[1][3];
 
-    graph.plot(0, i, vv);
+    graph.plot(0, i, v);
     graph.plot(1, i, error);
-    graph.plot(2, 0, oMc[0][3], oMc[1][3]);
     // graph.plot(1, i, task.getError());
     // getchar();
-    //usleep(1000 * 33);
+    // usleep(1000 * 33);
   }
 
+  getchar();
+
   const char* legend = "Click to quit...";
-  vpDisplay::displayText(graph.I, ( int )graph.I.getHeight() - 60, ( int )graph.I.getWidth() - 150,
-                         legend, vpColor::red);
+  vpDisplay::displayText(graph.I, ( int )graph.I.getHeight() - 60,
+                         ( int )graph.I.getWidth() - 150, legend, vpColor::red);
   vpDisplay::flush(graph.I);
   vpDisplay::getClick(graph.I);
 }
